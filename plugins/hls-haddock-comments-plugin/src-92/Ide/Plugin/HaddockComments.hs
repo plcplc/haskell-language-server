@@ -8,21 +8,26 @@ module Ide.Plugin.HaddockComments
     ( descriptor
     ) where
 
-import qualified Control.Lens                          as L
-import           Control.Monad.IO.Class                (liftIO)
+import qualified Control.Lens                           as L
+import           Control.Monad.IO.Class                 (liftIO)
 import           Control.Monad.Trans.Maybe
-import           Data.Maybe                            (catMaybes, fromMaybe)
-import qualified Data.Text                             as T
-import           Development.IDE                       hiding (pluginHandlers)
+import           Data.Foldable                          (toList)
+import           Data.Maybe                             (catMaybes, fromMaybe)
+import qualified Data.Text                              as T
+import qualified Data.Text.IO                           as T
+import           Development.IDE                        hiding (pluginHandlers)
 import           Development.IDE.GHC.Compat
 import           Development.IDE.GHC.Compat.ExactPrint
-import           Development.IDE.GHC.ExactPrint        (GetAnnotatedParsedSource (..))
-import qualified Development.IDE.GHC.ExactPrint        as ExactPrint
-import           Development.IDE.Plugin.CodeAction     (mkExactprintPluginDescriptor)
-import qualified Ide.Plugin.HaddockComments.Data       as Data
+import           Development.IDE.GHC.ExactPrint         (GetAnnotatedParsedSource (..))
+import qualified Development.IDE.GHC.ExactPrint         as ExactPrint
+import           Development.IDE.Plugin.CodeAction      (mkExactprintPluginDescriptor)
+import           Development.IDE.Plugin.CodeAction.Util (traceAst)
+import           Development.IDE.Spans.Common           (DocMap)
+import           GHC.Utils.Outputable
+import qualified Ide.Plugin.HaddockComments.Data        as Data
 import           Ide.Types
 import           Language.LSP.Types
-import           Language.LSP.Types.Lens               (HasChanges (changes))
+import           Language.LSP.Types.Lens                (HasChanges (changes))
 
 data Log = LogExactPrint ExactPrint.Log
 
@@ -39,11 +44,13 @@ codeActionProvider :: PluginMethodHandler IdeState TextDocumentCodeAction
 codeActionProvider ideState _pId (CodeActionParams _ _ (TextDocumentIdentifier uri) range
     CodeActionContext {_diagnostics = List diags}) = fmap (fromMaybe defaultResult) . runMaybeT $ do
     nfp <- MaybeT . pure . uriToNormalizedFilePath . toNormalizedUri $ uri
+    docMap <- fmap getDocMap . MaybeT . liftIO . runAction "HaddockComments.GetDocMap" ideState $ use GetDocMap nfp
+    liftIO . print . nonDetUFMToList $ docMap
     pm <- MaybeT . liftIO $ runAction "HaddockComments.GetAnnotatedParsedSource" ideState $
         use GetAnnotatedParsedSource nfp
     let locDecls = hsmodDecls . unLoc . astA $ pm
         codeActions = fmap InR $ take 1 $ catMaybes
-            [ runDeclHaddockGenerator uri generator locDecl |
+            [ runDeclHaddockGenerator uri (generator docMap) locDecl |
                 noErr,
                 locDecl <- locDecls,
                 declInterleaveWithRange locDecl range,
@@ -54,7 +61,7 @@ codeActionProvider ideState _pId (CodeActionParams _ _ (TextDocumentIdentifier u
     defaultResult = Right $ List []
     noErr = and $ (/= Just DsError) . _severity <$> diags
 
-declHaddockGenerator :: [LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)]
+declHaddockGenerator :: [DocMap -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)]
 declHaddockGenerator =
     [ Data.generateHaddockComments
     ]

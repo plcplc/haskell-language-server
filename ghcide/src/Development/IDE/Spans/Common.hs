@@ -23,6 +23,7 @@ import           GHC.Generics
 
 import           GHC
 
+import           Data.Data                    (Data)
 import           Development.IDE.GHC.Compat
 import           Development.IDE.GHC.Orphans  ()
 import           Development.IDE.GHC.Util

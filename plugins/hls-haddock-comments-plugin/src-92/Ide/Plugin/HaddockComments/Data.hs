@@ -7,32 +7,33 @@ module Ide.Plugin.HaddockComments.Data
     ) where
 
 import           Control.Lens
-import           Control.Monad                         (unless)
-import           Data.Generics                         (Data, cast, everything)
-import           Data.List                             (isPrefixOf)
-import           Data.Maybe                            (isJust)
+import           Control.Monad                          (unless)
+import           Data.List                              (isPrefixOf)
 import           Debug.Trace
 import           Development.IDE.GHC.Compat
-import           GHC                                   (AddEpAnn, AnnContext,
-                                                        AnnList, EpAnn (..),
-                                                        EpAnnComments (..),
-                                                        EpaComment, LEpaComment,
-                                                        SrcSpanAnnA, ann,
-                                                        comments,
-                                                        getFollowingComments)
-import           Ide.Plugin.HaddockComments.Prelude
-import           Language.Haskell.GHC.ExactPrint       (balanceCommentsList',
-                                                        runTransform)
-import           Language.Haskell.GHC.ExactPrint.Utils (ghcCommentText)
+import           Development.IDE.Plugin.CodeAction.Util (traceAst)
+import           Development.IDE.Spans.Common           (DocMap)
+import           GHC                                    (AddEpAnn (..),
+                                                         AnnList (..),
+                                                         DeltaPos (..),
+                                                         EpAnn (..),
+                                                         EpAnnComments (..),
+                                                         EpaLocation (..),
+                                                         LEpaComment,
+                                                         SrcSpanAnn' (..),
+                                                         TrailingAnn (..), ann,
+                                                         comments)
+import           Language.Haskell.GHC.ExactPrint        (balanceCommentsList',
+                                                         runTransform)
+import           Language.Haskell.GHC.ExactPrint.Utils  (ghcCommentText)
 
-generateHaddockComments :: LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)
-generateHaddockComments hsDecl@(L _ (TyClD _ (DataDecl { tcdDataDefn = HsDataDefn { dd_cons = cons } }))) = do
-    let cons' = runTransform (fmap balanceFieldsComments <$> balanceCommentsList' cons) ^. _1
-        allComments = collectComments hsDecl
-    traceShow allComments $ unless (missingSomeHaddock cons') Nothing
+generateHaddockComments :: DocMap -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)
+generateHaddockComments docMap hsDecl@(L _ (TyClD _ (DataDecl { tcdLName, tcdDataDefn = HsDataDefn { dd_cons = cons } }))) = do
+    let cons' = fixLConDecl <$> runTransform (fmap balanceFieldsComments <$> balanceCommentsList' cons) ^. _1
+    unless (missingSomeHaddock cons') Nothing
 
     pure hsDecl
-generateHaddockComments _ = Nothing
+generateHaddockComments _ _ = Nothing
 
 balanceFieldsComments :: LConDecl GhcPs -> LConDecl GhcPs
 balanceFieldsComments (L locCon con@ConDeclH98 {con_args = RecCon (L locFields fields)}) =
@@ -46,28 +47,34 @@ missingSomeHaddock = any $ \lcon@(L _ conDecl) -> case conDecl of
         elem (Just False) $ hasHaddock lcon : fmap hasHaddock fields
     _ -> False
 
-collectComments :: Data a => a -> [String]
-collectComments = everything (++) go
+fixLConDecl :: LConDecl GhcPs -> LConDecl GhcPs
+fixLConDecl (L declLoc decl@ConDeclH98 {con_args = RecCon (L fieldsLoc fields)}) =
+    L declLoc decl {con_args = RecCon (L fieldsLoc fields')}
   where
-    go node
-      | Just (ann :: EpAnn AnnContext) <- cast node = fmap ghcCommentText (priorComments (comments ann) ++ getFollowingComments (comments ann))
-      | otherwise = []
+    fields' = over _last (\(L loc@(SrcSpanAnn{ann}) field) -> L (loc {ann = updateLastFieldAnn ann}) field) fields
 
-hasHaddock :: (HasHsDocString a, HasAddEpAnn a) => GenLocated SrcSpanAnnA a -> Maybe Bool
-hasHaddock (L (ann -> EpAnn { comments }) node) = Just $
-    -- any (matchCommentPrefix priorCommentPrefix) (priorComments comments)
-    -- || any (matchCommentPrefix followingCommentPrefix) (getFollowingComments comments)
-    -- || isJust (getHsDocString node)
-    epAnnHasHaddock (getAddEpAnn node)
-hasHaddock _                                 = Nothing
+    updateLastFieldAnn EpAnnNotUsed    = EpAnnNotUsed
+    updateLastFieldAnn ann@EpAnn{anns = AnnListItem annTrailing } =
+        ann { anns = AnnListItem
+                (AddCommaAnn (EpaDelta (SameLine 1) misplacedFollowingHaddockComments) : annTrailing)
+            }
 
--------------------------------------------------------
+    misplacedFollowingHaddockComments :: [LEpaComment]
+    misplacedFollowingHaddockComments = case ann fieldsLoc of
+        EpAnn {anns = AnnList {al_close = Just (AddEpAnn AnnCloseC (EpaDelta _ comments))}} ->
+            filter (matchCommentPrefix followingCommentPrefix) comments
+        _ -> []
+fixLConDecl x                                    = x
 
-epAnnHasHaddock :: EpAnn [AddEpAnn] -> Bool
-epAnnHasHaddock EpAnnNotUsed = error "unexpected EpAnnNotUsed"
-epAnnHasHaddock EpAnn{comments} =
+hasHaddock :: GenLocated (SrcAnn AnnListItem) b -> Maybe Bool
+hasHaddock (L (ann -> EpAnn { anns = AnnListItem{lann_trailing}, comments }) _) = Just $
     any (matchCommentPrefix priorCommentPrefix) (priorComments comments)
-    || any (matchCommentPrefix followingCommentPrefix) (getFollowingComments comments)
+    || any trailingAnnHasHaddock lann_trailing
+  where
+    trailingAnnHasHaddock :: TrailingAnn -> Bool
+    trailingAnnHasHaddock (AddCommaAnn (EpaDelta _ comments)) = any (matchCommentPrefix followingCommentPrefix) comments
+    trailingAnnHasHaddock _ = False
+hasHaddock _                                 = Nothing
 
 priorCommentPrefix :: [String]
 priorCommentPrefix = ["-- |", "{-|", "{- |"]
@@ -77,20 +84,3 @@ followingCommentPrefix = ["-- ^", "{-^", "{- ^"]
 
 matchCommentPrefix :: [String] -> LEpaComment -> Bool
 matchCommentPrefix prefix comment = any (`isPrefixOf` ghcCommentText comment) prefix
-
--- NOTE: we should probably use the following code instead of matching strings on our own.
--- However, all haddock comments are provided as EpaLineComment or EpaBlockComment.
--- I think that indicates an upstream bug.
---
--- priorCommentIsHaddock :: LEpaComment -> Bool
--- priorCommentIsHaddock comment = getCommentTok comment & \case
---     EpaDocCommentNext _ -> True
---     _                   -> False
--- followingCommentIsHaddock :: LEpaComment -> Bool
--- followingCommentIsHaddock comment = getCommentTok comment & \case
---     EpaDocCommentPrev _ -> True
---     _                   -> False
--- getCommentTok :: LEpaComment -> EpaCommentTok
--- getCommentTok (L _ EpaComment {ac_tok}) = traceShowId ac_tok
-
--------------------------------------------------------
