@@ -27,9 +27,25 @@ import           Language.Haskell.GHC.ExactPrint        (balanceCommentsList',
                                                          runTransform)
 import           Language.Haskell.GHC.ExactPrint.Utils  (ghcCommentText)
 
+
+-- find the Name of each constructor, field, etc, use lookupNameEnv to lookup them in DocMap
+-- need to get the AST of GhcRn phase
+-- >>> :kind! LIdP GhcRn
+-- LIdP GhcRn :: *
+-- = GenLocated (SrcSpanAnn' (EpAnn NameAnn)) Name
+
+-- >>> :kind! LIdP GhcTc
+-- LIdP GhcTc :: *
+-- = GenLocated (SrcSpanAnn' (EpAnn NameAnn)) Var
+
+-- >>> :kind! TyClGroup GhcRn
+
+-- This is the renamed AST: tcg_rn_decls. Get it from the TypeCheck rule
+
 generateHaddockComments :: DocMap -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)
 generateHaddockComments docMap hsDecl@(L _ (TyClD _ (DataDecl { tcdLName, tcdDataDefn = HsDataDefn { dd_cons = cons } }))) = do
     let cons' = fixLConDecl <$> runTransform (fmap balanceFieldsComments <$> balanceCommentsList' cons) ^. _1
+    -- let L _ (Exact name) = tcdLName
     unless (missingSomeHaddock cons') Nothing
 
     pure hsDecl
