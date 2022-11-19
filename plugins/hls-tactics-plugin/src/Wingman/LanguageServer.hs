@@ -426,9 +426,6 @@ buildPatHy prov (fromPatCompat -> p0) =
         RecCon r ->
           mkDerivedRecordHypothesis prov con args r
     SigPat  _ p _ -> buildPatHy prov p
-#if __GLASGOW_HASKELL__ == 808
-    XPat   p      -> buildPatHy prov $ unLoc p
-#endif
     _             -> pure mempty
 
 
@@ -464,7 +461,7 @@ mkFakeVar = do
 
 
 ------------------------------------------------------------------------------
--- | Construct a fake varible to attach the current 'Provenance' to, and then
+-- | Construct a fake variable to attach the current 'Provenance' to, and then
 -- build a sub-hypothesis for the pattern match.
 mkDerivedConHypothesis
     :: Provenance
@@ -583,10 +580,6 @@ wingmanRules recorder plId = do
 #endif
                         | isHole occ ->
                             maybeToList $ srcSpanToRange span
-#if __GLASGOW_HASKELL__ == 808
-                      L span (EWildPat _) ->
-                        maybeToList $ srcSpanToRange span
-#endif
                       (_ :: LHsExpr GhcPs) -> mempty
                     ) $ pm_parsed_source pm
             pure

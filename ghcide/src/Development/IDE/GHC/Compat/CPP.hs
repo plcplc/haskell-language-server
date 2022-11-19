@@ -3,7 +3,7 @@
 
 -- Copied from https://github.com/ghc/ghc/blob/master/compiler/main/DriverPipeline.hs on 14 May 2019
 -- Requested to be exposed at https://gitlab.haskell.org/ghc/ghc/merge_requests/944.
--- Update the above MR got merged to master on 31 May 2019. When it becomes avialable to ghc-lib, this file can be removed.
+-- Update the above MR got merged to master on 31 May 2019. When it becomes available to ghc-lib, this file can be removed.
 
 {- HLINT ignore -} -- since copied from upstream
 
@@ -48,11 +48,7 @@ doCpp dflags raw input_fn output_fn = do
     let verbFlags = getVerbFlags dflags
 
     let cpp_prog args | raw       = SysTools.runCpp dflags args
-#if MIN_VERSION_ghc(8,10,0)
                       | otherwise = SysTools.runCc Nothing
-#else
-                      | otherwise = SysTools.runCc
-#endif
                                           dflags (SysTools.Option "-E" : args)
 
     let target_defs =
