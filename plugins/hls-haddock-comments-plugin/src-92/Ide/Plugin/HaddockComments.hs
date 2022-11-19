@@ -48,9 +48,11 @@ codeActionProvider ideState _pId (CodeActionParams _ _ (TextDocumentIdentifier u
     liftIO . print . nonDetUFMToList $ docMap
     pm <- MaybeT . liftIO $ runAction "HaddockComments.GetAnnotatedParsedSource" ideState $
         use GetAnnotatedParsedSource nfp
+    tcModRes <- MaybeT . liftIO . runAction "HaddockComments.TypeCheck" ideState $ use TypeCheck nfp
+    tcDecls <- MaybeT . pure . tcg_rn_decls . tmrTypechecked $ tcModRes
     let locDecls = hsmodDecls . unLoc . astA $ pm
         codeActions = fmap InR $ take 1 $ catMaybes
-            [ runDeclHaddockGenerator uri (generator docMap) locDecl |
+            [ runDeclHaddockGenerator uri (generator docMap tcDecls) locDecl |
                 noErr,
                 locDecl <- locDecls,
                 declInterleaveWithRange locDecl range,
@@ -61,7 +63,7 @@ codeActionProvider ideState _pId (CodeActionParams _ _ (TextDocumentIdentifier u
     defaultResult = Right $ List []
     noErr = and $ (/= Just DsError) . _severity <$> diags
 
-declHaddockGenerator :: [DocMap -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)]
+declHaddockGenerator :: [DocMap -> HsGroup GhcRn -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)]
 declHaddockGenerator =
     [ Data.generateHaddockComments
     ]

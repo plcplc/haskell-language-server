@@ -42,14 +42,18 @@ import           Language.Haskell.GHC.ExactPrint.Utils  (ghcCommentText)
 
 -- This is the renamed AST: tcg_rn_decls. Get it from the TypeCheck rule
 
-generateHaddockComments :: DocMap -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)
-generateHaddockComments docMap hsDecl@(L _ (TyClD _ (DataDecl { tcdLName, tcdDataDefn = HsDataDefn { dd_cons = cons } }))) = do
+-- Plan: Add warnings to all exported yet undocumented identifiers
+
+generateHaddockComments :: DocMap -> HsGroup GhcRn -> LHsDecl GhcPs -> Maybe (LHsDecl GhcPs)
+generateHaddockComments docMap (HsGroup {hs_tyclds})
+    hsDecl@(L _ (TyClD _ (DataDecl { tcdLName, tcdDataDefn = HsDataDefn { dd_cons = cons } }))) = do
+    let tyDecls = concatMap group_tyclds hs_tyclds
     let cons' = fixLConDecl <$> runTransform (fmap balanceFieldsComments <$> balanceCommentsList' cons) ^. _1
     -- let L _ (Exact name) = tcdLName
     unless (missingSomeHaddock cons') Nothing
 
     pure hsDecl
-generateHaddockComments _ _ = Nothing
+generateHaddockComments _ _ _ = Nothing
 
 balanceFieldsComments :: LConDecl GhcPs -> LConDecl GhcPs
 balanceFieldsComments (L locCon con@ConDeclH98 {con_args = RecCon (L locFields fields)}) =
