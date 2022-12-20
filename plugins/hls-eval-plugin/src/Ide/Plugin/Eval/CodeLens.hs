@@ -67,8 +67,7 @@ import           Development.IDE                              (GetModuleGraph (.
                                                                useNoFile_,
                                                                useWithStale_,
                                                                use_, uses_)
-import           Development.IDE.Core.Rules                   (GhcSessionDepsConfig (..),
-                                                               ghcSessionDepsDefinition)
+import           Development.IDE.Core.Rules                   (ghcSessionDepsDefinition)
 import           Development.IDE.GHC.Compat                   hiding (typeKind,
                                                                unitState)
 import qualified Development.IDE.GHC.Compat                   as Compat
@@ -571,8 +570,6 @@ runGetSession st nfp = liftIO $ runAction "eval" st $ do
     ((_, res),_) <- liftIO $ loadSessionFun fp
     let env = fromMaybe (error $ "Unknown file: " <> fp) res
         ghcSessionDepsConfig = def
-            { checkForImportCycles = False
-            }
     res <- fmap hscEnvWithImportPaths <$> ghcSessionDepsDefinition True ghcSessionDepsConfig env nfp
     return $ fromMaybe (error $ "Unable to load file: " <> fp) res
 
