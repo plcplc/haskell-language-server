@@ -39,7 +39,6 @@ import           Language.LSP.Types                       hiding
                                                            SemanticTokenRelative (length),
                                                            SemanticTokensEdit (_start),
                                                            mkRange)
-import qualified Language.LSP.Types                       as LSP
 import           Language.LSP.Types.Capabilities
 import qualified Language.LSP.Types.Lens                  as L
 import           System.Directory
@@ -54,25 +53,28 @@ import           Test.Tasty.HUnit
 import           Text.Regex.TDFA                          ((=~))
 
 
-import           Development.IDE.Plugin.CodeAction        (bindingsPluginDescriptor,
-                                                           matchRegExMultipleImports)
+import           Development.IDE.Plugin.CodeAction        (matchRegExMultipleImports)
 import           Test.Hls
 
 import           Control.Applicative                      (liftA2)
 import qualified Development.IDE.Plugin.CodeAction        as Refactor
 import qualified Development.IDE.Plugin.HLS.GhcIde        as GhcIde
+import qualified Test.AddArgument
 
 main :: IO ()
 main = defaultTestRunner tests
 
-refactorPlugin :: [PluginDescriptor IdeState]
-refactorPlugin =
-      [ Refactor.iePluginDescriptor mempty "ghcide-code-actions-imports-exports"
-      , Refactor.typeSigsPluginDescriptor mempty "ghcide-code-actions-type-signatures"
-      , Refactor.bindingsPluginDescriptor mempty "ghcide-code-actions-bindings"
-      , Refactor.fillHolePluginDescriptor mempty "ghcide-code-actions-fill-holes"
-      , Refactor.extendImportPluginDescriptor mempty "ghcide-completions-1"
-      ] ++ GhcIde.descriptors mempty
+refactorPlugin :: IO [PluginDescriptor IdeState]
+refactorPlugin = do
+  exactprintLog <- pluginTestRecorder
+  ghcideLog <- pluginTestRecorder
+  pure $
+      [ Refactor.iePluginDescriptor exactprintLog "ghcide-code-actions-imports-exports"
+      , Refactor.typeSigsPluginDescriptor exactprintLog "ghcide-code-actions-type-signatures"
+      , Refactor.bindingsPluginDescriptor exactprintLog "ghcide-code-actions-bindings"
+      , Refactor.fillHolePluginDescriptor exactprintLog "ghcide-code-actions-fill-holes"
+      , Refactor.extendImportPluginDescriptor exactprintLog "ghcide-completions-1"
+      ] ++ GhcIde.descriptors ghcideLog
 
 tests :: TestTree
 tests =
@@ -101,7 +103,8 @@ initializeTests = withResource acquire release tests
               doTest = do
                   ir <- getInitializeResponse
                   let Just ExecuteCommandOptions {_commands = List commands} = getActual $ innerCaps ir
-                  zipWithM_ (\e o -> T.isSuffixOf e o @? show (e,o)) expected commands
+                  -- Check if expected exists in commands. Note that commands can arrive in different order.
+                  mapM_ (\e -> any (\o -> T.isSuffixOf e o) commands @? show (expected, show commands)) expected
 
     acquire :: IO (ResponseMessage Initialize)
     acquire = run initializeResponse
@@ -215,19 +218,19 @@ completionTests =
             "not imported"
             ["module A where", "import Text.Printf ()", "FormatParse"]
             (Position 2 10)
-            "FormatParse {"
-            ["module A where", "import Text.Printf (FormatParse (FormatParse))", "FormatParse"]
+            "FormatParse"
+            ["module A where", "import Text.Printf (FormatParse)", "FormatParse"]
         , completionCommandTest
             "parent imported"
             ["module A where", "import Text.Printf (FormatParse)", "FormatParse"]
             (Position 2 10)
-            "FormatParse {"
+            "FormatParse"
             ["module A where", "import Text.Printf (FormatParse (FormatParse))", "FormatParse"]
         , completionNoCommandTest
             "already imported"
             ["module A where", "import Text.Printf (FormatParse (FormatParse))", "FormatParse"]
             (Position 2 10)
-            "FormatParse {"
+            "FormatParse"
         ]
         , testGroup "Package completion"
           [ completionCommandTest
@@ -258,7 +261,8 @@ completionCommandTest name src pos wanted expected = testSession name $ do
   _ <- waitForDiagnostics
   compls <- skipManyTill anyMessage (getCompletions docId pos)
   let wantedC = find ( \case
-            CompletionItem {_insertText = Just x} -> wanted `T.isPrefixOf` x
+            CompletionItem {_insertText = Just x
+                           ,_command    = Just _} -> wanted `T.isPrefixOf` x
             _                                     -> False
             ) compls
   case wantedC of
@@ -322,7 +326,7 @@ codeActionTests = testGroup "code actions"
   , addImplicitParamsConstraintTests
   , removeExportTests
 #if MIN_VERSION_ghc(9,2,1)
-  , addFunctionArgumentTests
+  , Test.AddArgument.tests
 #endif
   ]
 
@@ -604,7 +608,7 @@ renameActionTests = testGroup "rename actions"
       doc <- createDoc "Testing.hs" "haskell" content
       _ <- waitForDiagnostics
       actionsOrCommands <- getCodeActions doc (Range (Position 3 12) (Position 3 20))
-      [fixTypo] <- pure [action | InR action@CodeAction{ _title = actionTitle } <- actionsOrCommands, "monus" `T.isInfixOf` actionTitle ]
+      [fixTypo] <- pure [action | InR action@CodeAction{ _title = actionTitle } <- actionsOrCommands, "monus" `T.isInfixOf` actionTitle , "Replace" `T.isInfixOf` actionTitle]
       executeCodeAction fixTypo
       contentAfterAction <- documentContents doc
       let expectedContentAfterAction = T.unlines
@@ -742,6 +746,7 @@ typeWildCardActionTests = testGroup "type wildcard actions"
         executeCodeAction addSignature
         contentAfterAction <- documentContents doc
         liftIO $ expectedContentAfterAction @=? contentAfterAction
+
 
 {-# HLINT ignore "Use nubOrd" #-}
 removeImportTests :: TestTree
@@ -1288,7 +1293,8 @@ extendImportTests = testGroup "extend import actions"
                     , "b :: A"
                     , "b = ConstructorFoo"
                     ])
-        , testSession "extend single line qualified import with value" $ template
+        , ignoreForGHC94 "On GHC 9.4, the error messages with -fdefer-type-errors don't have necessary imported target srcspan info." $
+          testSession "extend single line qualified import with value" $ template
             [("ModuleA.hs", T.unlines
                     [ "module ModuleA where"
                     , "stuffA :: Double"
@@ -1459,7 +1465,7 @@ extendImportTests = testGroup "extend import actions"
                     , "import A (pattern Some)"
                     , "k (Some x) = x"
                     ])
-        , ignoreForGHC92 "Diagnostic message has no suggestions" $
+        , ignoreFor (BrokenForGHC [GHC92, GHC94]) "Diagnostic message has no suggestions" $
           testSession "type constructor name same as data constructor name" $ template
             [("ModuleA.hs", T.unlines
                     [ "module ModuleA where"
@@ -1663,8 +1669,10 @@ suggestImportTests = testGroup "suggest import actions"
     , test True []          "f = empty"                   []                "import Control.Applicative (empty)"
     , test True []          "f = empty"                   []                "import Control.Applicative"
     , test True []          "f = (&)"                     []                "import Data.Function ((&))"
-    , test True []          "f = NE.nonEmpty"             []                "import qualified Data.List.NonEmpty as NE"
-    , test True []          "f = Data.List.NonEmpty.nonEmpty" []            "import qualified Data.List.NonEmpty"
+    , ignoreForGHC94 "On GHC 9.4 the error message doesn't contain the qualified module name: https://gitlab.haskell.org/ghc/ghc/-/issues/20472"
+      $ test True []          "f = NE.nonEmpty"             []                "import qualified Data.List.NonEmpty as NE"
+    , ignoreForGHC94 "On GHC 9.4 the error message doesn't contain the qualified module name: https://gitlab.haskell.org/ghc/ghc/-/issues/20472"
+      $ test True []          "f = Data.List.NonEmpty.nonEmpty" []            "import qualified Data.List.NonEmpty"
     , test True []          "f :: Typeable a => a"        ["f = undefined"] "import Data.Typeable (Typeable)"
     , test True []          "f = pack"                    []                "import Data.Text (pack)"
     , test True []          "f :: Text"                   ["f = undefined"] "import Data.Text (Text)"
@@ -1672,15 +1680,18 @@ suggestImportTests = testGroup "suggest import actions"
     , test True []          "f = (&) [] id"               []                "import Data.Function ((&))"
     , test True []          "f = (.|.)"                   []                "import Data.Bits (Bits((.|.)))"
     , test True []          "f = (.|.)"                   []                "import Data.Bits ((.|.))"
-    , test True []          "f :: a ~~ b"                 []                "import Data.Type.Equality (type (~~))"
-    , test True
+    , test True []          "f :: a ~~ b"                 []                "import Data.Type.Equality ((~~))"
+    , ignoreForGHC94 "On GHC 9.4 the error message doesn't contain the qualified module name: https://gitlab.haskell.org/ghc/ghc/-/issues/20472"
+      $ test True
       ["qualified Data.Text as T"
       ]                     "f = T.putStrLn"              []                "import qualified Data.Text.IO as T"
-    , test True
+    , ignoreForGHC94 "On GHC 9.4 the error message doesn't contain the qualified module name: https://gitlab.haskell.org/ghc/ghc/-/issues/20472"
+      $ test True
       [ "qualified Data.Text as T"
       , "qualified Data.Function as T"
       ]                     "f = T.putStrLn"              []                "import qualified Data.Text.IO as T"
-    , test True
+    , ignoreForGHC94 "On GHC 9.4 the error message doesn't contain the qualified module name: https://gitlab.haskell.org/ghc/ghc/-/issues/20472"
+      $ test True
       [ "qualified Data.Text as T"
       , "qualified Data.Function as T"
       , "qualified Data.Functor as T"
@@ -2166,243 +2177,7 @@ insertNewDefinitionTests = testGroup "insert new definition actions"
   ]
 
 #if MIN_VERSION_ghc(9,2,1)
-addFunctionArgumentTests :: TestTree
-addFunctionArgumentTests =
-  testGroup
-    "add function argument"
-    [ testSession "simple" $ do
-        let foo =
-              [ "foo True = select [True]",
-                "",
-                "foo False = False"
-              ]
-            foo' =
-              [ "foo True select = select [True]",
-                "",
-                "foo False select = False"
-              ]
-            someOtherCode =
-              [ "",
-                "someOtherCode = ()"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo ++ someOtherCode)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 0 0 0 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines (foo' ++ someOtherCode),
-      testSession "comments" $ do
-        let foo =
-              [ "foo -- c1",
-                "  True -- c2",
-                "  = -- c3",
-                "    select [True]",
-                "",
-                "foo False = False"
-              ]
-            -- TODO improve behavior slightly?
-            foo' =
-              [ "foo -- c1",
-                "  True select -- c2",
-                "  = -- c3",
-                "    select [True]",
-                "",
-                "foo False select = False"
-              ]
-            someOtherCode =
-              [ "",
-                "someOtherCode = ()"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo ++ someOtherCode)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 3 0 3 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines (foo' ++ someOtherCode),
-      testSession "leading decls" $ do
-        let foo =
-              [ "module Foo where",
-                "",
-                "bar = 1",
-                "",
-                "foo True = select [True]",
-                "",
-                "foo False = False"
-              ]
-            foo' =
-              [ "module Foo where",
-                "",
-                "bar = 1",
-                "",
-                "foo True select = select [True]",
-                "",
-                "foo False select = False"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 4 0 4 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines foo',
-      testSession "hole" $ do
-        let foo =
-              [ "module Foo where",
-                "",
-                "bar = 1",
-                "",
-                "foo True = _select [True]",
-                "",
-                "foo False = False"
-              ]
-            foo' =
-              [ "module Foo where",
-                "",
-                "bar = 1",
-                "",
-                "foo True _select = _select [True]",
-                "",
-                "foo False _select = False"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 4 0 4 50)
-        liftIO $ actionTitle @?= "Add argument ‘_select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines foo',
-      testSession "untyped error" $ do
-        let foo =
-              [ "foo = select"
-              ]
-            foo' =
-              [ "foo select = select"
-              ]
-            someOtherCode =
-              [ "",
-                "someOtherCode = ()"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo ++ someOtherCode)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 0 0 0 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines (foo' ++ someOtherCode),
-      testSession "untyped error" $ do
-        let foo =
-              [ "foo = select"
-              ]
-            foo' =
-              [ "foo select = select"
-              ]
-            someOtherCode =
-              [ "",
-                "someOtherCode = ()"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo ++ someOtherCode)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 0 0 0 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines (foo' ++ someOtherCode),
-      testSession "where clause" $ do
-        let foo =
-              [ "foo True = False ",
-                "  where",
-                "    bar = select",
-                "",
-                "foo False = False"
-              ]
-            -- TODO improve this behaviour (should add select to bar, not foo)
-            foo' =
-              [ "foo True select = False ",
-                "  where",
-                "    bar = select",
-                "",
-                "foo False select = False"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 2 0 2 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines foo',
-      testSession "where clause" $ do
-        let foo =
-              [ "foo -- c1",
-                "  -- | c2",
-                "  {- c3 -} True -- c4",
-                "  = select",
-                "",
-                "foo False = False"
-              ]
-            -- TODO could use improvement here...
-            foo' =
-              [ "foo -- c1",
-                "  -- | c2",
-                "  {- c3 -} True select -- c4",
-                "  = select",
-                "",
-                "foo False select = False"
-              ]
-        docB <- createDoc "ModuleB.hs" "haskell" (T.unlines $ foo)
-        _ <- waitForDiagnostics
-        InR action@CodeAction {_title = actionTitle} : _ <-
-          filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-            <$> getCodeActions docB (R 3 0 3 50)
-        liftIO $ actionTitle @?= "Add argument ‘select’ to function"
-        executeCodeAction action
-        contentAfterAction <- documentContents docB
-        liftIO $ contentAfterAction @?= T.unlines foo',
-        mkGoldenAddArgTest "AddArgWithSig" (R 1 0 1 50),
-        mkGoldenAddArgTest "AddArgWithSigAndDocs" (R 8 0 8 50),
-        mkGoldenAddArgTest "AddArgFromLet" (R 2 0 2 50),
-        mkGoldenAddArgTest "AddArgFromWhere" (R 3 0 3 50),
-        mkGoldenAddArgTest "AddArgWithTypeSynSig" (R 2 0 2 50),
-        mkGoldenAddArgTest "AddArgWithTypeSynSigContravariant" (R 2 0 2 50),
-        mkGoldenAddArgTest "AddArgWithLambda" (R 1 0 1 50),
-        mkGoldenAddArgTest "MultiSigFirst" (R 2 0 2 50),
-        mkGoldenAddArgTest "MultiSigLast" (R 2 0 2 50),
-        mkGoldenAddArgTest "MultiSigMiddle" (R 2 0 2 50)
-    ]
 #endif
-
-mkGoldenAddArgTest :: FilePath -> Range -> TestTree
-mkGoldenAddArgTest testFileName range = do
-    let action docB = do
-          _ <- waitForDiagnostics
-          InR action@CodeAction {_title = actionTitle} : _ <-
-            filter (\(InR CodeAction {_title = x}) -> "Add" `isPrefixOf` T.unpack x)
-              <$> getCodeActions docB range
-          liftIO $ actionTitle @?= "Add argument ‘new_def’ to function"
-          executeCodeAction action
-    goldenWithHaskellDoc
-      (Refactor.bindingsPluginDescriptor mempty "ghcide-code-actions-bindings")
-      (testFileName <> " (golden)")
-      "test/data/golden/add-arg"
-      testFileName
-      "expected"
-      "hs"
-      action
 
 deleteUnusedDefinitionTests :: TestTree
 deleteUnusedDefinitionTests = testGroup "delete unused definition action"
@@ -2557,7 +2332,11 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , ""
                , "f = 1"
                ])
+#if MIN_VERSION_ghc(9,4,0)
+    [ (DsWarning, (3, 4), "Defaulting the type variable") ]
+#else
     [ (DsWarning, (3, 4), "Defaulting the following constraint") ]
+#endif
     "Add type annotation ‘Integer’ to ‘1’"
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
                , "module A (f) where"
@@ -2574,7 +2353,11 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , "    let x = 3"
                , "    in x"
                ])
+#if MIN_VERSION_ghc(9,4,0)
+    [ (DsWarning, (4, 12), "Defaulting the type variable") ]
+#else
     [ (DsWarning, (4, 12), "Defaulting the following constraint") ]
+#endif
     "Add type annotation ‘Integer’ to ‘3’"
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
                , "module A where"
@@ -2592,7 +2375,11 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , "    let x = let y = 5 in y"
                , "    in x"
                ])
+#if MIN_VERSION_ghc(9,4,0)
+    [ (DsWarning, (4, 20), "Defaulting the type variable") ]
+#else
     [ (DsWarning, (4, 20), "Defaulting the following constraint") ]
+#endif
     "Add type annotation ‘Integer’ to ‘5’"
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
                , "module A where"
@@ -2611,9 +2398,15 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , ""
                , "f = seq \"debug\" traceShow \"debug\""
                ])
+#if MIN_VERSION_ghc(9,4,0)
+    [ (DsWarning, (6, 8), "Defaulting the type variable")
+    , (DsWarning, (6, 16), "Defaulting the type variable")
+    ]
+#else
     [ (DsWarning, (6, 8), "Defaulting the following constraint")
     , (DsWarning, (6, 16), "Defaulting the following constraint")
     ]
+#endif
     ("Add type annotation ‘" <> listOfChar <> "’ to ‘\"debug\"’")
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
                , "{-# LANGUAGE OverloadedStrings #-}"
@@ -2623,7 +2416,7 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , ""
                , "f = seq (\"debug\" :: " <> listOfChar <> ") traceShow \"debug\""
                ])
-  , knownBrokenForGhcVersions [GHC92] "GHC 9.2 only has 'traceShow' in error span" $
+  , knownBrokenForGhcVersions [GHC92, GHC94] "GHC 9.2 only has 'traceShow' in error span" $
     testSession "add default type to satisfy two constraints" $
     testFor
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
@@ -2634,7 +2427,11 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , ""
                , "f a = traceShow \"debug\" a"
                ])
+#if MIN_VERSION_ghc(9,4,0)
+    [ (DsWarning, (6, 6), "Defaulting the type variable") ]
+#else
     [ (DsWarning, (6, 6), "Defaulting the following constraint") ]
+#endif
     ("Add type annotation ‘" <> listOfChar <> "’ to ‘\"debug\"’")
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
                , "{-# LANGUAGE OverloadedStrings #-}"
@@ -2644,7 +2441,7 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , ""
                , "f a = traceShow (\"debug\" :: " <> listOfChar <> ") a"
                ])
-  , knownBrokenForGhcVersions [GHC92] "GHC 9.2 only has 'traceShow' in error span" $
+  , knownBrokenForGhcVersions [GHC92, GHC94] "GHC 9.2 only has 'traceShow' in error span" $
     testSession "add default type to satisfy two constraints with duplicate literals" $
     testFor
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
@@ -2655,7 +2452,11 @@ addTypeAnnotationsToLiteralsTest = testGroup "add type annotations to literals t
                , ""
                , "f = seq (\"debug\" :: [Char]) (seq (\"debug\" :: [Char]) (traceShow \"debug\"))"
                ])
+#if MIN_VERSION_ghc(9,4,0)
+    [ (DsWarning, (6, 54), "Defaulting the type variable") ]
+#else
     [ (DsWarning, (6, 54), "Defaulting the following constraint") ]
+#endif
     ("Add type annotation ‘" <> listOfChar <> "’ to ‘\"debug\"’")
     (T.unlines [ "{-# OPTIONS_GHC -Wtype-defaults #-}"
                , "{-# LANGUAGE OverloadedStrings #-}"
@@ -3272,15 +3073,15 @@ removeRedundantConstraintsTests = let
     "Remove redundant constraints `(Monoid a, Show a)` from the context of the type signature for `foo`"
     (typeSignatureSpaces $ Just "Monoid a, Show a")
     (typeSignatureSpaces Nothing)
-    , check
+  , check
     "Remove redundant constraint `Eq a` from the context of the type signature for `foo`"
     typeSignatureLined1
     typeSignatureOneLine
-    , check
+  , check
     "Remove redundant constraints `(Eq a, Show a)` from the context of the type signature for `foo`"
     typeSignatureLined2
     typeSignatureOneLine
-    , check
+  , check
     "Remove redundant constraint `Show a` from the context of the type signature for `foo`"
     typeSignatureLined3
     typeSignatureLined3'
@@ -3350,7 +3151,7 @@ exportUnusedTests = testGroup "export unused actions"
         (R 2 0 2 11)
         "Export ‘bar’"
         Nothing
-    , ignoreForGHC92 "Diagnostic message has no suggestions" $
+    , ignoreFor (BrokenForGHC [GHC92, GHC94]) "Diagnostic message has no suggestions" $
       testSession "type is exported but not the constructor of same name" $ template
         (T.unlines
               [ "{-# OPTIONS_GHC -Wunused-top-binds #-}"
@@ -3966,7 +3767,9 @@ run' :: (FilePath -> Session a) -> IO a
 run' s = withTempDir $ \dir -> runInDir dir (s dir)
 
 runInDir :: FilePath -> Session a -> IO a
-runInDir dir = runSessionWithServer' refactorPlugin def def lspTestCaps dir
+runInDir dir act = do
+  plugin <- refactorPlugin
+  runSessionWithServer' plugin def def lspTestCaps dir act
 
 lspTestCaps :: ClientCapabilities
 lspTestCaps = fullCaps { _window = Just $ WindowClientCapabilities (Just True) Nothing Nothing }
@@ -3984,6 +3787,9 @@ withTempDir f = System.IO.Extra.withTempDir $ \dir -> do
 
 ignoreForGHC92 :: String -> TestTree -> TestTree
 ignoreForGHC92 = ignoreFor (BrokenForGHC [GHC92])
+
+ignoreForGHC94 :: String -> TestTree -> TestTree
+ignoreForGHC94 = knownIssueFor Broken (BrokenForGHC [GHC94])
 
 data BrokenTarget =
     BrokenSpecific OS [GhcVersion]
@@ -4030,4 +3836,3 @@ assertJust s = \case
 listOfChar :: T.Text
 listOfChar | ghcVersion >= GHC90 = "String"
            | otherwise = "[Char]"
-

@@ -14,7 +14,7 @@ copyright:          The Haskell IDE Team
 license:            Apache-2.0
 license-file:       LICENSE
 build-type:         Simple
-tested-with:        GHC == 8.10.7 || == 9.0.2 || == 9.2.3 || == 9.2.4
+tested-with:        GHC == 8.10.7 || == 9.0.2 || ==9.2.5
 extra-source-files:
   README.md
   ChangeLog.md
@@ -61,6 +61,12 @@ common pedantic
 flag ignore-plugins-ghc-bounds
   description: Force the inclusion of plugins even if they are not buildable by default with a specific ghc version
   default:     False
+  manual:      True
+
+
+flag cabal
+  description: Enable cabal plugin
+  default:     True
   manual:      True
 
 flag class
@@ -215,6 +221,11 @@ common cabalfmt
     build-depends: hls-cabal-fmt-plugin ^>= 0.1.0.0
     cpp-options: -Dhls_cabalfmt
 
+common cabal
+  if flag(cabal)
+    build-depends: hls-cabal-plugin ^>= 0.1
+    cpp-options: -Dhls_cabal
+
 common class
   if flag(class)
     build-depends: hls-class-plugin ^>= 1.1
@@ -251,7 +262,7 @@ common rename
     cpp-options: -Dhls_rename
 
 common retrie
-  if flag(retrie) && (impl(ghc < 9.4.1) || flag(ignore-plugins-ghc-bounds))
+  if flag(retrie)
     build-depends: hls-retrie-plugin ^>= 1.0
     cpp-options: -Dhls_retrie
 
@@ -261,7 +272,7 @@ common tactic
     cpp-options: -Dhls_tactic
 
 common hlint
-  if flag(hlint) && (impl(ghc < 9.4.1) || flag(ignore-plugins-ghc-bounds))
+  if flag(hlint)
     build-depends: hls-hlint-plugin ^>= 1.1
     cpp-options: -Dhls_hlint
 
@@ -281,7 +292,7 @@ common pragmas
     cpp-options: -Dhls_pragmas
 
 common splice
-  if flag(splice) && (impl(ghc < 9.4.1) || flag(ignore-plugins-ghc-bounds))
+  if flag(splice)
     build-depends: hls-splice-plugin ^>=1.0.0.1
     cpp-options: -Dhls_splice
 
@@ -306,7 +317,7 @@ common changeTypeSignature
     cpp-options: -Dhls_changeTypeSignature
 
 common gadt
-  if flag(gadt) && (impl(ghc < 9.4.1) || flag(ignore-plugins-ghc-bounds))
+  if flag(gadt)
     build-depends: hls-gadt-plugin ^>= 1.0
     cpp-options: -Dhls_gadt
 
@@ -328,7 +339,7 @@ common floskell
     cpp-options: -Dhls_floskell
 
 common fourmolu
-  if flag(fourmolu) && (impl(ghc < 9.4.1) || flag(ignore-plugins-ghc-bounds))
+  if flag(fourmolu)
     build-depends: hls-fourmolu-plugin ^>= 1.1
     cpp-options: -Dhls_fourmolu
 
@@ -348,7 +359,7 @@ common brittany
     cpp-options: -Dhls_brittany
 
 common refactor
-  if flag(refactor) && (impl(ghc < 9.4.1) || flag(ignore-plugins-ghc-bounds))
+  if flag(refactor)
     build-depends: hls-refactor-plugin ^>= 1.0
     cpp-options: -Dhls_refactor
 
@@ -358,6 +369,7 @@ library
                   , warnings
                   , pedantic
                   -- plugins
+                  , cabal
                   , callHierarchy
                   , cabalfmt
                   , changeTypeSignature
@@ -542,6 +554,8 @@ test-suite func-test
   build-depends:
     , bytestring
     , data-default
+    , deepseq
+    , hashable
     , hspec-expectations
     , lens
     , lens-aeson
@@ -649,6 +663,6 @@ benchmark benchmark
         lens-aeson,
         optparse-applicative,
         shake,
-        shake-bench == 0.1.*,
+        shake-bench == 0.2.*,
         text,
         yaml

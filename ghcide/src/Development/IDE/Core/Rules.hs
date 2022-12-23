@@ -144,7 +144,7 @@ import           Ide.Plugin.Properties                        (HasProperty,
                                                                useProperty)
 import           Ide.PluginUtils                              (configForPlugin)
 import           Ide.Types                                    (DynFlagsModifications (dynFlagsModifyGlobal, dynFlagsModifyParser),
-                                                               PluginId)
+                                                               PluginId, PluginDescriptor (pluginId), IdePlugins (IdePlugins))
 import Control.Concurrent.STM.Stats (atomically)
 import Language.LSP.Server (LspT)
 import System.Info.Extra (isWindows)
@@ -154,7 +154,7 @@ import qualified Development.IDE.Core.Shake as Shake
 import qualified Development.IDE.Types.Logger as Logger
 import qualified Development.IDE.Types.Shake as Shake
 import           Development.IDE.GHC.CoreFile
-import           Data.Time.Clock.POSIX             (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
+import           Data.Time.Clock.POSIX             (posixSecondsToUTCTime)
 import Control.Monad.IO.Unlift
 #if MIN_VERSION_ghc(9,3,0)
 import GHC.Unit.Module.Graph
@@ -253,9 +253,7 @@ getParsedModuleRule :: Recorder (WithPriority Log) -> Rules ()
 getParsedModuleRule recorder =
   -- this rule does not have early cutoff since all its dependencies already have it
   define (cmapWithPrio LogShake recorder) $ \GetParsedModule file -> do
-    ModSummaryResult{msrModSummary = ms'} <- use_ GetModSummary file
-    sess <- use_ GhcSession file
-    let hsc = hscEnv sess
+    ModSummaryResult{msrModSummary = ms', msrHscEnv = hsc} <- use_ GetModSummary file
     opt <- getIdeOptions
     modify_dflags <- getModifyDynFlags dynFlagsModifyParser
     let ms = ms' { ms_hspp_opts = modify_dflags $ ms_hspp_opts ms' }
@@ -327,8 +325,7 @@ getParsedModuleWithCommentsRule recorder =
   -- The parse diagnostics are owned by the GetParsedModule rule
   -- For this reason, this rule does not produce any diagnostics
   defineNoDiagnostics (cmapWithPrio LogShake recorder) $ \GetParsedModuleWithComments file -> do
-    ModSummaryResult{msrModSummary = ms} <- use_ GetModSummary file
-    sess <- use_ GhcSession file
+    ModSummaryResult{msrModSummary = ms, msrHscEnv = hsc} <- use_ GetModSummary file
     opt <- getIdeOptions
 
     let ms' = withoutOption Opt_Haddock $ withOption Opt_KeepRawTokenStream ms
@@ -336,12 +333,12 @@ getParsedModuleWithCommentsRule recorder =
     let ms = ms' { ms_hspp_opts = modify_dflags $ ms_hspp_opts ms' }
         reset_ms pm = pm { pm_mod_summary = ms' }
 
-    liftIO $ fmap (fmap reset_ms) $ snd <$> getParsedModuleDefinition (hscEnv sess) opt file ms
+    liftIO $ fmap (fmap reset_ms) $ snd <$> getParsedModuleDefinition hsc opt file ms
 
 getModifyDynFlags :: (DynFlagsModifications -> a) -> Action a
 getModifyDynFlags f = do
   opts <- getIdeOptions
-  cfg <- getClientConfigAction def
+  cfg <- getClientConfigAction
   pure $ f $ optModifyDynFlags opts cfg
 
 
@@ -694,8 +691,7 @@ typeCheckRuleDefinition hsc pm = do
 
   unlift <- askUnliftIO
   let dets = TypecheckHelpers
-           { getLinkablesToKeep = unliftIO unlift currentLinkables
-           , getLinkables = unliftIO unlift . uses_ GetLinkable
+           { getLinkables = unliftIO unlift . uses_ GetLinkable
            }
   addUsageDependencies $ liftIO $
     typecheckModule defer hsc dets pm
@@ -1057,16 +1053,6 @@ getClientSettingsRule recorder = defineEarlyCutOffNoFile (cmapWithPrio LogShake 
   settings <- clientSettings <$> getIdeConfiguration
   return (LBS.toStrict $ B.encode $ hash settings, settings)
 
--- | Returns the client configuration stored in the IdeState.
--- You can use this function to access it from shake Rules
-getClientConfigAction :: Config -- ^ default value
-                      -> Action Config
-getClientConfigAction defValue = do
-  mbVal <- unhashed <$> useNoFile_ GetClientSettings
-  case A.parse (parseConfig defValue) <$> mbVal of
-    Just (Success c) -> return c
-    _                -> return defValue
-
 usePropertyAction ::
   (HasProperty s k t r) =>
   KeyNameProxy s ->
@@ -1074,8 +1060,7 @@ usePropertyAction ::
   Properties r ->
   Action (ToHsType t)
 usePropertyAction kn plId p = do
-  config <- getClientConfigAction def
-  let pluginConfig = configForPlugin config plId
+  pluginConfig <- getPluginConfigAction plId
   pure $ useProperty kn p $ plcConfig pluginConfig
 
 -- ---------------------------------------------------------------------
@@ -1116,10 +1101,23 @@ getLinkableRule recorder =
               Just obj_t
                 | obj_t >= core_t -> pure ([], Just $ HomeModInfo hirModIface hirModDetails (Just $ LM (posixSecondsToUTCTime obj_t) (ms_mod ms) [DotO obj_file]))
               _ -> liftIO $ coreFileToLinkable linkableType (hscEnv session) ms hirModIface hirModDetails bin_core (error "object doesn't have time")
-        -- Record the linkable so we know not to unload it
+        -- Record the linkable so we know not to unload it, and unload old versions
         whenJust (hm_linkable =<< hmi) $ \(LM time mod _) -> do
             compiledLinkables <- getCompiledLinkables <$> getIdeGlobalAction
-            liftIO $ void $ modifyVar' compiledLinkables $ \old -> extendModuleEnv old mod time
+            liftIO $ modifyVar compiledLinkables $ \old -> do
+              let !to_keep = extendModuleEnv old mod time
+              --We need to unload old linkables before we can load in new linkables. However,
+              --the unload function in the GHC API takes a list of linkables to keep (i.e.
+              --not unload). Earlier we unloaded right before loading in new linkables, which
+              --is effectively once per splice. This can be slow as unload needs to walk over
+              --the list of all loaded linkables, for each splice.
+              --
+              --Solution: now we unload old linkables right after we generate a new linkable and
+              --just before returning it to be loaded. This has a substantial effect on recompile
+              --times as the number of loaded modules and splices increases.
+              --
+              unload (hscEnv session) (map (\(mod, time) -> LM time mod []) $ moduleEnvToList to_keep)
+              return (to_keep, ())
         return (hash <$ hmi, (warns, LinkableResult <$> hmi <*> pure hash))
 
 -- | For now we always use bytecode unless something uses unboxed sums and tuples along with TH
