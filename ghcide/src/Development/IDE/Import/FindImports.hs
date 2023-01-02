@@ -156,11 +156,7 @@ locateModule env comp_info exts targetFor modName mbPkgName isSource = do
     import_paths = mapMaybe (mkImportDirs env) comp_info
     toModLocation uid file = liftIO $ do
         loc <- mkHomeModLocation dflags (unLoc modName) (fromNormalizedFilePath file)
-#if MIN_VERSION_ghc(9,0,0)
         let mod = mkModule (RealUnit $ Definite uid) (unLoc modName)  -- TODO support backpack holes
-#else
-        let mod = mkModule uid (unLoc modName)
-#endif
         return $ Right $ FileImport $ ArtifactsLocation file (Just loc) (not isSource) (Just mod)
 
     lookupLocal uid dirs = do

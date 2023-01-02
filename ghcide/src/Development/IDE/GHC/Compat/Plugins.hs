@@ -19,7 +19,6 @@ module Development.IDE.GHC.Compat.Plugins (
     getPsMessages
     ) where
 
-#if MIN_VERSION_ghc(9,0,0)
 #if MIN_VERSION_ghc(9,2,0)
 import qualified GHC.Driver.Env                        as Env
 #endif
@@ -37,10 +36,6 @@ import qualified GHC.Parser.Lexer                      as Lexer
 import           Data.Bifunctor                        (bimap)
 #endif
 import qualified GHC.Runtime.Loader                    as Loader
-#else
-import qualified DynamicLoading                        as Loader
-import           Plugins
-#endif
 import           Development.IDE.GHC.Compat.Core
 import           Development.IDE.GHC.Compat.Env        (hscSetFlags, hsc_dflags)
 import           Development.IDE.GHC.Compat.Outputable as Out

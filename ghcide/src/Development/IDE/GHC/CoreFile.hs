@@ -22,7 +22,6 @@ import           GHC.Fingerprint
 
 import           Development.IDE.GHC.Compat
 
-#if MIN_VERSION_ghc(9,0,0)
 import           GHC.Core
 import           GHC.CoreToIface
 import           GHC.Iface.Binary
@@ -36,21 +35,6 @@ import           GHC.Utils.Binary
 import           GHC.Types.TypeEnv
 #else
 import           GHC.Driver.Types
-#endif
-
-#else
-import           Binary
-import           BinFingerprint                  (fingerprintBinMem)
-import           BinIface
-import           CoreSyn
-import           HscTypes
-import           IdInfo
-import           IfaceEnv
-import           MkId
-import           TcIface
-import           ToIface
-import           Unique
-import           Var
 #endif
 
 import qualified Development.IDE.GHC.Compat.Util as Util

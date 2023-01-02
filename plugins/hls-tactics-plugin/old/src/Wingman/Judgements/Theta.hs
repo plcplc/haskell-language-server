@@ -26,9 +26,7 @@ import           GHC.Generics
 import           Wingman.GHC
 import           Wingman.Types
 
-#if __GLASGOW_HASKELL__ >= 900
 import GHC.Tc.Utils.TcType
-#endif
 
 
 ------------------------------------------------------------------------------
@@ -130,11 +128,7 @@ evidenceToHypothesis (HasInstance t) =
 -- | Given @a ~ b@ or @a ~# b@, returns @Just (a, b)@, otherwise @Nothing@.
 getEqualityTheta :: PredType -> Maybe (Type, Type)
 getEqualityTheta (splitTyConApp_maybe -> Just (tc, [_k, a, b]))
-#if __GLASGOW_HASKELL__ > 806
   | tc == eqTyCon
-#else
-  | nameRdrName (tyConName tc) == eqTyCon_RDR
-#endif
   = Just (a, b)
 getEqualityTheta (splitTyConApp_maybe -> Just (tc, [_k1, _k2, a, b]))
   | tc == eqPrimTyCon = Just (a, b)
@@ -176,30 +170,20 @@ excludeForbiddenMethods = filter (not . flip S.member forbiddenMethods . hi_name
 ------------------------------------------------------------------------------
 -- | Extract evidence from 'AbsBinds' in scope.
 absBinds ::  SrcSpan -> LHsBindLR GhcTc GhcTc -> [PredType]
-#if __GLASGOW_HASKELL__ >= 900
 absBinds dst (L src (FunBind w _ _ _))
   | dst `isSubspanOf` src
   = wrapper w
 absBinds dst (L src (AbsBinds _ _ h _ _ z _))
-#else
-absBinds dst (L src (AbsBinds _ _ h _ _ _ _))
-#endif
   | dst `isSubspanOf` src
   = fmap idType h
-#if __GLASGOW_HASKELL__ >= 900
     <> foldMap (absBinds dst) z
-#endif
 absBinds _ _ = []
 
 
 ------------------------------------------------------------------------------
 -- | Extract evidence from 'HsWrapper's in scope
 wrapperBinds ::  SrcSpan -> LHsExpr GhcTc -> [PredType]
-#if __GLASGOW_HASKELL__ >= 900
 wrapperBinds dst (L src (XExpr (WrapExpr (HsWrap h _))))
-#else
-wrapperBinds dst (L src (HsWrap _ h _))
-#endif
   | dst `isSubspanOf` src
   = wrapper h
 wrapperBinds _ _ = []
@@ -217,11 +201,7 @@ matchBinds _ _ = []
 ------------------------------------------------------------------------------
 -- | Extract evidence from a 'ConPatOut'.
 patBinds ::  Pat GhcTc -> [PredType]
-#if __GLASGOW_HASKELL__ >= 900
 patBinds (ConPat{ pat_con_ext = ConPatTc { cpt_dicts = dicts }})
-#else
-patBinds (ConPatOut { pat_dicts = dicts })
-#endif
   = fmap idType dicts
 patBinds _ = []
 

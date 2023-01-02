@@ -229,11 +229,7 @@ destructLambdaCase' use_field_puns f jdg = do
   when (isDestructBlacklisted jdg) cut -- throwError NoApplicableTactic
   let g  = jGoal jdg
   case splitFunTy_maybe (unCType g) of
-#if __GLASGOW_HASKELL__ >= 900
     Just (_multiplicity, arg, _) | isAlgType arg ->
-#else
-    Just (arg, _) | isAlgType arg ->
-#endif
       fmap (fmap noLoc lambdaCase) <$>
         destructMatches use_field_puns f Nothing (CType arg) jdg
     _ -> cut -- throwError $ GoalMismatch "destructLambdaCase'" g

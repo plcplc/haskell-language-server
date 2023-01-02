@@ -485,11 +485,7 @@ codeAction state plId (CodeActionParams _ _ docId ran _) = liftIO $
                     _ -> Stop
                 )
                 `extQ` \case
-#if __GLASGOW_HASKELL__ == 808
-                    (dL @(Pat GhcPs) -> L l@(RealSrcSpan spLoc _) pat :: Located (Pat GhcPs))
-#else
                     (L (AsSrcSpan l@(RealSrcSpan spLoc _)) pat :: LPat GhcPs)
-#endif
                         | spanIsRelevant l ->
                             case pat of
                                 SplicePat{} -> Here (spLoc, Pat)

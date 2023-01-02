@@ -66,7 +66,6 @@ jobs:
              , "9.2.4"
              , "9.2.3"
              , "9.0.2"
-             , "8.10.7"
              ]
         os: [ "ubuntu-latest"
             , "macOS-latest"
@@ -94,9 +93,6 @@ jobs:
            - os: ubuntu-latest
              ghc: '9.0.2'
              test: true
-           - os: ubuntu-latest
-             ghc: '8.10.7'
-             test: true
            - os: windows-latest
              ghc: '9.4.2'
              test: true
@@ -107,9 +103,6 @@ jobs:
              test: true
            - os: windows-latest
              ghc: '9.0.2'
-             test: true
-           - os: windows-latest
-             ghc: '8.10.7'
              test: true
 
     steps:
@@ -270,6 +263,7 @@ jobs:
         run: cabal test hls-explicit-record-fields-plugin --test-options="$TEST_OPTS" || LSP_TEST_LOG_COLOR=0 LSP_TEST_LOG_MESSAGES=true LSP_TEST_LOG_STDERR=true cabal test hls-explicit-record-fields-plugin --test-options="$TEST_OPTS"
 
       ## version needs to be limited since the tests depend on cabal-fmt which only builds using specific ghc versions
+      ## FIXME: this is unsatisfiable!
       - if: matrix.test && matrix.ghc == '8.10.7'
         name: Test hls-cabal-fmt-plugin test suite
         run: cabal test hls-cabal-fmt-plugin --flag=isolateTests --test-options="$TEST_OPTS" || cabal test hls-cabal-fmt-plugin --flag=isolateTests --test-options="$TEST_OPTS" || LSP_TEST_LOG_COLOR=0 LSP_TEST_LOG_MESSAGES=true LSP_TEST_LOG_STDERR=true cabal test hls-cabal-fmt-plugin --flag=isolateTests --test-options="$TEST_OPTS"

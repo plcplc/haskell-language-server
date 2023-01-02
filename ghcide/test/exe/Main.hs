@@ -1212,7 +1212,6 @@ checkFileCompiles fp diag =
 
 pluginSimpleTests :: TestTree
 pluginSimpleTests =
-  ignoreInWindowsForGHC810 $
   -- Build profile: -w ghc-9.4.2 -O1
   -- In order, the following will be built (use -v for more details):
   -- - ghc-typelits-natnormalise-0.7.7 (lib) (requires build)
@@ -1248,7 +1247,6 @@ pluginSimpleTests =
 
 pluginParsedResultTests :: TestTree
 pluginParsedResultTests =
-  ignoreInWindowsForGHC810 $
   ignoreForGHC92Plus "No need for this plugin anymore!" $
   testSessionWithExtraFiles "plugin-recorddot" "parsedResultAction plugin" $ \dir -> do
     _ <- openDoc (dir</> "RecordDot.hs") "haskell"
@@ -2114,19 +2112,13 @@ highlightTests = testGroup "highlight"
         _ <- waitForDiagnostics
         highlights <- getHighlights doc (Position 4 15)
         liftIO $ highlights @?= List
-          -- Span is just the .. on 8.10, but Rec{..} before
-          [ if ghcVersion >= GHC810
-            then DocumentHighlight (R 4 8 4 10) (Just HkWrite)
-            else DocumentHighlight (R 4 4 4 11) (Just HkWrite)
+          [ DocumentHighlight (R 4 8 4 10) (Just HkWrite)
           , DocumentHighlight (R 4 14 4 20) (Just HkRead)
           ]
         highlights <- getHighlights doc (Position 3 17)
         liftIO $ highlights @?= List
           [ DocumentHighlight (R 3 17 3 23) (Just HkWrite)
-          -- Span is just the .. on 8.10, but Rec{..} before
-          , if ghcVersion >= GHC810
-              then DocumentHighlight (R 4 8 4 10) (Just HkRead)
-              else DocumentHighlight (R 4 4 4 11) (Just HkRead)
+          , DocumentHighlight (R 4 8 4 10) (Just HkRead)
           ]
   ]
   where
@@ -2333,10 +2325,6 @@ xfail = flip expectFailBecause
 
 ignoreInWindowsBecause :: String -> TestTree -> TestTree
 ignoreInWindowsBecause = ignoreFor (BrokenForOS Windows)
-
-ignoreInWindowsForGHC810 :: TestTree -> TestTree
-ignoreInWindowsForGHC810 =
-    ignoreFor (BrokenSpecific Windows [GHC810]) "tests are unreliable in windows for ghc 8.10"
 
 ignoreForGHC92Plus :: String -> TestTree -> TestTree
 ignoreForGHC92Plus = ignoreFor (BrokenForGHC [GHC92, GHC94])

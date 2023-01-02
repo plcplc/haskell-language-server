@@ -413,11 +413,7 @@ buildPatHy prov (fromPatCompat -> p0) =
         (RealDataCon $ tupleDataCon boxity $ length pats)
         tys
           $ zip [0.. ] pats
-#if __GLASGOW_HASKELL__ >= 900
     ConPat {pat_con = (L _ con), pat_con_ext = ConPatTc {cpt_arg_tys = args}, pat_args = f} ->
-#else
-    ConPatOut {pat_con = (L _ con), pat_arg_tys = args, pat_args = f} ->
-#endif
       case f of
         PrefixCon l_pgt ->
           mkDerivedConHypothesis prov con args $ zip [0..] l_pgt
@@ -573,11 +569,7 @@ wingmanRules recorder plId = do
                       L span (HsVar _ (L _ name))
                         | isHole (occName name) ->
                             maybeToList $ srcSpanToRange span
-#if __GLASGOW_HASKELL__ >= 900
                       L span (HsUnboundVar _ occ)
-#else
-                      L span (HsUnboundVar _ (TrueExprHole occ))
-#endif
                         | isHole occ ->
                             maybeToList $ srcSpanToRange span
                       (_ :: LHsExpr GhcPs) -> mempty

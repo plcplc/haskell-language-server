@@ -138,12 +138,10 @@ import           Language.LSP.Types.Lens                      (end, line)
 import           Language.LSP.VFS                             (virtualFileText)
 
 #if MIN_VERSION_ghc(9,2,0)
-#elif MIN_VERSION_ghc(9,0,0)
+#else
 import           GHC.Driver.Session                           (unitDatabases,
                                                                unitState)
 import           GHC.Types.SrcLoc                             (UnhelpfulSpanReason (UnhelpfulInteractive))
-#else
-import           DynFlags
 #endif
 
 
@@ -279,7 +277,6 @@ runEvalCmd plId st EvalParams{..} =
                         . flip xopt_unset  LangExt.MonomorphismRestriction
                         $ idflags
                 setInteractiveDynFlags $ df'
-#if MIN_VERSION_ghc(9,0,0)
                         {
                         packageFlags =
                             packageFlags
@@ -287,20 +284,6 @@ runEvalCmd plId st EvalParams{..} =
                         , useColor = Never
                         , canUseColor = False
                         }
-#else
-                        { pkgState =
-                            pkgState
-                                df
-                        , pkgDatabase =
-                            pkgDatabase
-                                df
-                        , packageFlags =
-                            packageFlags
-                                df
-                        , useColor = Never
-                        , canUseColor = False
-                        }
-#endif
 
                 -- Load the module with its current content (as the saved module might not be up to date)
                 eSetTarget <- gStrictTry $ setTargets [thisModuleTarget]
@@ -546,11 +529,7 @@ evals mark_exception (st, fp) df stmts = do
                 void $ runDecls stmt
                 return Nothing
     pf = initParserOpts df
-#if !MIN_VERSION_ghc(9,0,0)
-    unhelpfulReason = "<interactive>"
-#else
     unhelpfulReason = UnhelpfulInteractive
-#endif
     exec stmt l =
         let opts = execOptions{execSourceFile = fp, execLineNumber = l}
          in myExecStmt stmt opts

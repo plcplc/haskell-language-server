@@ -75,10 +75,6 @@ module Development.IDE.GHC.Compat.Core (
     -- slightly unsafe
     setUnsafeGlobalDynFlags,
     -- * Linear Haskell
-#if !MIN_VERSION_ghc(9,0,0)
-    Scaled,
-    unrestricted,
-#endif
     scaledThing,
     -- * Interface Files
     IfaceExport,
@@ -96,12 +92,7 @@ module Development.IDE.GHC.Compat.Core (
     mkPartialIface,
     mkFullIface,
     checkOldIface,
-#if MIN_VERSION_ghc(9,0,0)
     IsBootInterface(..),
-#else
-    pattern IsBoot,
-    pattern NotBoot,
-#endif
     -- * Fixity
     LexicalFixity(..),
     Fixity (..),
@@ -330,7 +321,6 @@ module Development.IDE.GHC.Compat.Core (
     collectHsBindsBinders,
 #endif
     -- * Util Module re-exports
-#if MIN_VERSION_ghc(9,0,0)
     module GHC.Builtin.Names,
     module GHC.Builtin.Types,
     module GHC.Builtin.Types.Prim,
@@ -400,62 +390,12 @@ module Development.IDE.GHC.Compat.Core (
     module GHC.Types.Unique.Supply,
     module GHC.Types.Var,
     module GHC.Unit.Module,
-#else
-    module BasicTypes,
-    module Class,
-    module Coercion,
-    module Predicate,
-    module ConLike,
-    module CoreUtils,
-    module DataCon,
-    module DsExpr,
-    module DsMonad,
-    module ErrUtils,
-    module FamInst,
-    module FamInstEnv,
-    module HeaderInfo,
-    module Id,
-    module InstEnv,
-    module IfaceSyn,
-    module Module,
-    module Name,
-    module NameCache,
-    module NameEnv,
-    module NameSet,
-    module PatSyn,
-    module PprTyThing,
-    module PrelInfo,
-    module PrelNames,
-    module RdrName,
-    module RnSplice,
-    module RnNames,
-    module TcEnv,
-    module TcEvidence,
-    module TcType,
-    module TcRnTypes,
-    module TcRnDriver,
-    module TcRnMonad,
-    module TyCon,
-    module TysPrim,
-    module TysWiredIn,
-    module Type,
-    module Unify,
-    module UniqFM,
-    module UniqSupply,
-    module Var,
-#endif
+
     -- * Syntax re-exports
-#if MIN_VERSION_ghc(9,0,0)
     module GHC.Hs,
     module GHC.Parser,
     module GHC.Parser.Header,
     module GHC.Parser.Lexer,
-#else
-    module GHC.Hs,
-    module ExtractDocs,
-    module Parser,
-    module Lexer,
-#endif
 #if MIN_VERSION_ghc(9,3,0)
     CompileReason(..),
     hsc_type_env_vars,
@@ -508,7 +448,6 @@ import GHC.Unit.Env
 import GHC.Driver.Phases
 #endif
 
-#if MIN_VERSION_ghc(9,0,0)
 import           GHC.Builtin.Names            hiding (Unique, printName)
 import           GHC.Builtin.Types
 import           GHC.Builtin.Types.Prim
@@ -669,93 +608,6 @@ import           GHC.Unit.State               (ModuleOrigin (..))
 import           GHC.Utils.Error              (Severity (..), emptyMessages)
 import           GHC.Utils.Panic              hiding (try)
 import qualified GHC.Utils.Panic.Plain        as Plain
-#else
-import qualified Avail
-import           BasicTypes                   hiding (Version)
-import           Class
-import           CmdLineParser                (Warn (..))
-import           ConLike
-import           CoreUtils
-import           DataCon                      hiding (dataConExTyCoVars)
-import qualified DataCon
-import           DriverPhases
-import           DriverPipeline
-import           DsExpr
-import           DsMonad                      hiding (foldrM)
-import           DynFlags                     hiding (ExposePackage)
-import qualified DynFlags
-import           ErrUtils                     hiding (logInfo, mkWarnMsg)
-import           ExtractDocs
-import           FamInst
-import           FamInstEnv
-import           Finder                       hiding (mkHomeModLocation)
-import           GHC.Hs                       hiding (HsLet, LetStmt)
-import qualified GHCi
-import           GhcMonad
-import           HeaderInfo                   hiding (getImports)
-import           Hooks
-import           HscMain                      as GHC
-import           HscTypes
-import           Id
-import           IfaceSyn
-import           InstEnv
-import           Lexer                        hiding (getSrcLoc)
-import qualified Linker
-import           LoadIface
-import           MkIface                      as GHC
-import           Module                       hiding (ModLocation (..), UnitId,
-                                               addBootSuffixLocnOut,
-                                               moduleUnitId)
-import qualified Module
-import           Name                         hiding (varName)
-import           NameCache
-import           NameEnv
-import           NameSet
-import           Packages
-import           Panic                        hiding (try)
-import qualified PlainPanic                   as Plain
-import           Parser
-import           PatSyn
-import           RnFixity
-import           Plugins
-import           PprTyThing                   hiding (pprFamInst)
-import           PrelInfo
-import           PrelNames                    hiding (Unique, printName)
-import           RdrName                      hiding (GRE, gre_name, gre_imp, gre_lcl, gre_par)
-import qualified RdrName
-import           RnNames
-import           RnSplice
-import qualified SrcLoc
-import           TcEnv
-import           TcEvidence                   hiding ((<.>))
-import           TcIface
-import           TcRnDriver
-import           TcRnMonad                    hiding (Applicative (..), IORef,
-                                               MonadFix (..), MonadIO (..),
-                                               allM, anyM, concatMapM, foldrM,
-                                               mapMaybeM, (<$>))
-import           TcRnTypes
-import           TcType
-import qualified TcType
-import           TidyPgm                     as GHC
-import qualified TyCoRep
-import           TyCon
-import           Type
-import           TysPrim
-import           TysWiredIn
-import           Unify
-import           UniqFM hiding (UniqFM)
-import qualified UniqFM
-import           UniqSupply
-import           Var                          (Var (varName), setTyVarUnique,
-                                               setVarUnique, varType)
-
-import           Coercion                     (coercionKind)
-import           Predicate
-import           SrcLoc                       (Located, SrcLoc (UnhelpfulLoc),
-                                               SrcSpan (UnhelpfulSpan))
-#endif
-
 
 import           Data.List                    (isSuffixOf)
 import           System.FilePath
@@ -775,10 +627,8 @@ import qualified GHC.Unit.Finder as GHC
 import qualified GHC.Driver.Config.Finder as GHC
 #elif MIN_VERSION_ghc(9,2,0)
 import qualified GHC.Unit.Finder as GHC
-#elif MIN_VERSION_ghc(9,0,0)
+#else 
 import qualified GHC.Driver.Finder as GHC
-#else
-import qualified Finder as GHC
 #endif
 
 -- NOTE(ozkutuk): Cpp clashes Phase.Cpp, so we hide it.
@@ -795,11 +645,6 @@ mkHomeModLocation = GHC.mkHomeModLocation
 #endif
 
 
-#if !MIN_VERSION_ghc(9,0,0)
-type BufSpan = ()
-type BufPos = ()
-#endif
-
 #if MIN_VERSION_ghc(9,3,0)
 pattern RealSrcSpan :: SrcLoc.RealSrcSpan -> Maybe BufSpan -> SrcLoc.SrcSpan
 #else
@@ -810,11 +655,8 @@ pattern RealSrcSpan :: SrcLoc.RealSrcSpan -> Maybe BufSpan -> SrcLoc.SrcSpan
 pattern RealSrcSpan x y <- SrcLoc.RealSrcSpan x ((\case Strict.Nothing -> Nothing; Strict.Just a -> Just a) -> y) where
   RealSrcSpan x y = SrcLoc.RealSrcSpan x (case y of Nothing -> Strict.Nothing; Just a -> Strict.Just a)
 
-#elif MIN_VERSION_ghc(9,0,0)
+#else 
 pattern RealSrcSpan x y = SrcLoc.RealSrcSpan x y
-#else
-pattern RealSrcSpan x y <- ((,Nothing) -> (SrcLoc.RealSrcSpan x, y)) where
-    RealSrcSpan x _ = SrcLoc.RealSrcSpan x
 #endif
 {-# COMPLETE RealSrcSpan, UnhelpfulSpan #-}
 
@@ -823,17 +665,11 @@ pattern RealSrcLoc :: SrcLoc.RealSrcLoc -> Strict.Maybe BufPos-> SrcLoc.SrcLoc
 #else
 pattern RealSrcLoc :: SrcLoc.RealSrcLoc -> Maybe BufPos-> SrcLoc.SrcLoc
 #endif
-#if MIN_VERSION_ghc(9,0,0)
 pattern RealSrcLoc x y = SrcLoc.RealSrcLoc x y
-#else
-pattern RealSrcLoc x y <- ((,Nothing) -> (SrcLoc.RealSrcLoc x, y)) where
-    RealSrcLoc x _ = SrcLoc.RealSrcLoc x
-#endif
 {-# COMPLETE RealSrcLoc, UnhelpfulLoc #-}
 
-
 pattern AvailTC :: Name -> [Name] -> [FieldLabel] -> Avail.AvailInfo
-#if __GLASGOW_HASKELL__ >= 902
+#if MIN_VERSION_ghc(9,2,0)
 pattern AvailTC n names pieces <- Avail.AvailTC n ((\gres -> foldr (\gre (names, pieces) -> case gre of
       Avail.NormalGreName name -> (name: names, pieces)
       Avail.FieldGreName label -> (names, label:pieces)) ([], []) gres) -> (names, pieces))
@@ -842,14 +678,14 @@ pattern AvailTC n names pieces <- Avail.AvailTC n names pieces
 #endif
 
 pattern AvailName :: Name -> Avail.AvailInfo
-#if __GLASGOW_HASKELL__ >= 902
+#if MIN_VERSION_ghc(9,2,0)
 pattern AvailName n <- Avail.Avail (Avail.NormalGreName n)
 #else
 pattern AvailName n <- Avail.Avail n
 #endif
 
 pattern AvailFL :: FieldLabel -> Avail.AvailInfo
-#if __GLASGOW_HASKELL__ >= 902
+#if MIN_VERSION_ghc(9,2,0)
 pattern AvailFL fl <- Avail.Avail (Avail.FieldGreName fl)
 #else
 -- pattern synonym that is never populated
@@ -872,7 +708,6 @@ pattern ExposePackage s a mr = DynFlags.ExposePackage s a mr
 pattern FunTy :: Type -> Type -> Type
 pattern FunTy arg res <- TyCoRep.FunTy {ft_arg = arg, ft_res = res}
 
-#if MIN_VERSION_ghc(9,0,0)
 -- type HasSrcSpan x a = (GenLocated SrcSpan a ~ x)
 -- type HasSrcSpan x = () :: Constraint
 
@@ -896,34 +731,14 @@ pattern L l a <- GHC.L (getLoc -> l) a
 {-# COMPLETE L #-}
 #endif
 
-#else
-type HasSrcSpan = SrcLoc.HasSrcSpan
-getLoc :: SrcLoc.HasSrcSpan a => a -> SrcLoc.SrcSpan
-getLoc = SrcLoc.getLoc
-#endif
-
 -- | Add the @-boot@ suffix to all output file paths associated with the
 -- module, not including the input file itself
 addBootSuffixLocnOut :: GHC.ModLocation -> GHC.ModLocation
 addBootSuffixLocnOut = Module.addBootSuffixLocnOut
 
-#if !MIN_VERSION_ghc(9,0,0)
--- Linear Haskell
-type Scaled a = a
-scaledThing :: Scaled a -> a
-scaledThing = id
-
-unrestricted :: a -> Scaled a
-unrestricted = id
-#endif
-
 mkInfForAllTys :: [TyVar] -> Type -> Type
 mkInfForAllTys =
-#if MIN_VERSION_ghc(9,0,0)
   TcType.mkInfForAllTys
-#else
-  mkInvForAllTys
-#endif
 
 #if !MIN_VERSION_ghc(9,2,0)
 splitForAllTyCoVars :: Type -> ([TyCoVar], Type)
@@ -948,14 +763,6 @@ tcSplitForAllTyVarBinder_maybe =
   tcSplitForAllTy_maybe
 #endif
 
-
-#if !MIN_VERSION_ghc(9,0,0)
-pattern NotBoot, IsBoot :: IsBootInterface
-pattern NotBoot = False
-pattern IsBoot = True
-#endif
-
-#if MIN_VERSION_ghc(9,0,0)
 -- This is from the old api, but it still simplifies
 pattern ConPatIn :: SrcLoc.Located (ConLikeP GhcPs) -> HsConPatDetails GhcPs -> Pat GhcPs
 #if MIN_VERSION_ghc(9,2,0)
@@ -965,35 +772,19 @@ pattern ConPatIn con args <- ConPat EpAnnNotUsed (L _ (SrcLoc.noLoc -> con)) arg
 #else
 pattern ConPatIn con args = ConPat NoExtField con args
 #endif
-#endif
 
 conPatDetails :: Pat p -> Maybe (HsConPatDetails p)
-#if MIN_VERSION_ghc(9,0,0)
 conPatDetails (ConPat _ _ args) = Just args
 conPatDetails _ = Nothing
-#else
-conPatDetails (ConPatIn _ args) = Just args
-conPatDetails _ = Nothing
-#endif
 
 mapConPatDetail :: (HsConPatDetails p -> Maybe (HsConPatDetails p)) -> Pat p -> Maybe (Pat p)
-#if MIN_VERSION_ghc(9,0,0)
 mapConPatDetail f pat@(ConPat _ _ args) = (\args' -> pat { pat_args = args'}) <$> f args
 mapConPatDetail _ _ = Nothing
-#else
-mapConPatDetail f (ConPatIn ss args) = ConPatIn ss <$> f args
-mapConPatDetail _ _ = Nothing
-#endif
-
 
 initDynLinker, initObjLinker :: HscEnv -> IO ()
 initDynLinker =
-#if !MIN_VERSION_ghc(9,0,0)
-    Linker.initDynLinker
-#else
     -- It errors out in GHC 9.0 and doesn't exist in 9.2
     const $ return ()
-#endif
 
 initObjLinker env =
 #if !MIN_VERSION_ghc(9,2,0)
@@ -1176,8 +967,4 @@ pattern NamedFieldPuns :: Extension
 pattern NamedFieldPuns = RecordPuns
 #endif
 
-#if MIN_VERSION_ghc(9,0,0)
 type UniqFM = UniqFM.UniqFM
-#else
-type UniqFM k = UniqFM.UniqFM
-#endif

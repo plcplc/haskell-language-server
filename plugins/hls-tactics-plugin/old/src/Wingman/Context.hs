@@ -14,9 +14,7 @@ import           Wingman.GHC (normalizeType)
 import           Wingman.Judgements.Theta
 import           Wingman.Types
 
-#if __GLASGOW_HASKELL__ >= 900
 import GHC.Tc.Utils.TcType
-#endif
 
 
 mkContext

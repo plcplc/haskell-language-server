@@ -137,11 +137,7 @@ notSeparatedByLineEnding _ _ = False
 -- | Empty haddock, suitable for being added to 'annPriorComments'
 emptyPriorHaddockComment :: Comment
 emptyPriorHaddockComment = mkComment "-- |"
-#if MIN_VERSION_ghc(9,0,0)
     badRealSrcSpan
-#else
-    noSrcSpan
-#endif
 
 -- | Determines the given node has haddock comments attached to it.
 hasHaddock :: Data a => Anns -> Located a -> Maybe Bool

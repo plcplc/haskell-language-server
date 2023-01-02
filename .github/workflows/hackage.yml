@@ -40,8 +40,8 @@ jobs:
                   "hls-qualify-imported-names-plugin", "hls-code-range-plugin",
                   "hls-cabal-fmt-plugin",
                   "haskell-language-server"]
-        ghc: [ "9.0.2"
-             , "8.10.7"
+        ghc: [ "9.2.5"
+             , "9.0.2"
              ]
         exclude:
         - ghc: "9.0.2"
@@ -136,7 +136,7 @@ jobs:
           cabal haddock --haddock-for-hackage
 
       - name: "Upload package dist tarball"
-        if: steps.get-hackage-version.outputs.exists != 'true' && matrix.ghc == '8.10.7'
+        if: steps.get-hackage-version.outputs.exists != 'true' && matrix.ghc == '9.2.5'
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.package }}

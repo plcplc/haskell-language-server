@@ -24,11 +24,7 @@ import           GHC.Generics                 (Generic)
 import           Ide.Plugin.Properties
 import           Language.LSP.Types           (CompletionItemKind (..), Uri)
 import qualified Language.LSP.Types           as J
-#if MIN_VERSION_ghc(9,0,0)
 import qualified GHC.Types.Name.Occurrence as Occ
-#else
-import qualified OccName as Occ
-#endif
 
 -- | Produce completions info for a file
 type instance RuleResult LocalCompletions = CachedCompletions

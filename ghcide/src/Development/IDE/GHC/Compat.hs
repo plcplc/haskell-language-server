@@ -31,9 +31,6 @@ module Development.IDE.GHC.Compat(
     pattern PFailedWithErrorMessages,
     isObjectLinkable,
 
-#if !MIN_VERSION_ghc(9,0,1)
-    RefMap,
-#endif
 
 #if MIN_VERSION_ghc(9,2,0)
 #if !MIN_VERSION_ghc(9,3,0)
@@ -152,8 +149,6 @@ import           GHC                                   hiding (HasSrcSpan,
 import           Data.Coerce                           (coerce)
 import           Data.String                           (IsString (fromString))
 
-
-#if MIN_VERSION_ghc(9,0,0)
 import           GHC.Core.Lint                         (lintInteractiveExpr)
 import qualified GHC.Core.Opt.Pipeline                 as GHC
 import           GHC.Core.Tidy                         (tidyExpr)
@@ -186,31 +181,7 @@ import           GHC.Types.Annotations                 (AnnTarget (ModuleTarget)
 import           GHC.Types.Unique.DFM                  as UniqDFM
 import           GHC.Types.Unique.DSet                 as UniqDSet
 import           GHC.Types.Unique.Set                  as UniqSet
-#else
-import           Annotations                           (AnnTarget (ModuleTarget),
-                                                        Annotation (..),
-                                                        extendAnnEnvList)
-import           ByteCodeAsm                           (bcoFreeNames)
-import           ByteCodeGen                           (coreExprToBCOs)
-import           CoreLint                              (lintInteractiveExpr)
-import           CorePrep                              (corePrepExpr,
-                                                        corePrepPgm)
-import           CoreSyn                               (CoreExpr,
-                                                        Unfolding (..),
-                                                        flattenBinds,
-                                                        noUnfolding)
-import           CoreTidy                              (tidyExpr)
-import           Hooks                                 (hscCompileCoreExprHook)
-import           Linker                                (linkExpr)
-import qualified SimplCore                             as GHC
-import           UniqDFM
-import           UniqDSet
-import           UniqSet
-import           VarEnv                                (emptyInScopeSet,
-                                                        emptyTidyEnv, mkRnEnv2)
-#endif
 
-#if MIN_VERSION_ghc(9,0,0)
 import           GHC.Data.FastString
 import           GHC.Core
 import           GHC.Data.StringBuffer
@@ -229,16 +200,6 @@ import           GHC.Iface.Env
 import           GHC.Iface.Make                        (mkIfaceExports)
 import qualified GHC.SysTools.Tasks                    as SysTools
 import qualified GHC.Types.Avail                       as Avail
-#else
-import           FastString
-import qualified Avail
-import           DynFlags                              hiding (ExposePackage)
-import           HscTypes
-import           MkIface                               hiding (writeIfaceFile)
-
-import           StringBuffer                          (hPutStringBuffer)
-import qualified SysTools
-#endif
 
 import           Compat.HieAst                         (enrichHie)
 import           Compat.HieBin
@@ -369,21 +330,15 @@ reLocA = id
 getDependentMods :: ModIface -> [ModuleName]
 #if MIN_VERSION_ghc(9,3,0)
 getDependentMods = map (gwib_mod . snd) . S.toList . dep_direct_mods . mi_deps
-#elif MIN_VERSION_ghc(9,0,0)
-getDependentMods = map gwib_mod . dep_mods . mi_deps
 #else
-getDependentMods = map fst . dep_mods . mi_deps
+getDependentMods = map gwib_mod . dep_mods . mi_deps
 #endif
 
 simplifyExpr :: DynFlags -> HscEnv -> CoreExpr -> IO CoreExpr
-#if MIN_VERSION_ghc(9,0,0)
 simplifyExpr _ = GHC.simplifyExpr
 
 corePrepExpr :: DynFlags -> HscEnv -> CoreExpr -> IO CoreExpr
 corePrepExpr _ = GHC.corePrepExpr
-#else
-simplifyExpr df _ = GHC.simplifyExpr df
-#endif
 
 renderMessages :: PsMessages -> (Bag WarnMsg, Bag ErrMsg)
 renderMessages msgs =
@@ -439,10 +394,6 @@ lookupNameCache mod occ name_cache =
 
 upNameCache :: IORef NameCache -> (NameCache -> (NameCache, c)) -> IO c
 upNameCache = updNameCache
-#endif
-
-#if !MIN_VERSION_ghc(9,0,1)
-type RefMap a = Map.Map Identifier [(Span, IdentifierDetails a)]
 #endif
 
 mkHieFile' :: ModSummary
@@ -512,7 +463,6 @@ isQualifiedImport _                                         = False
 
 
 
-#if MIN_VERSION_ghc(9,0,0)
 getNodeIds :: HieAST a -> Map.Map Identifier (IdentifierDetails a)
 getNodeIds = Map.foldl' combineNodeIds Map.empty . getSourcedNodeInfo . sourcedNodeInfo
 
@@ -537,35 +487,12 @@ combineNodeInfo' :: Ord a => NodeInfo a -> NodeInfo a -> NodeInfo a
     mergeSorted as [] = as
     mergeSorted [] bs = bs
 
-#else
-
-getNodeIds :: HieAST a -> NodeIdentifiers a
-getNodeIds = nodeIdentifiers . nodeInfo
--- import qualified FastString as FS
-
--- nodeInfo' :: HieAST TypeIndex -> NodeInfo TypeIndex
-nodeInfo' :: Ord a => HieAST a -> NodeInfo a
-nodeInfo' = nodeInfo
--- type Unit = UnitId
--- moduleUnit :: Module -> Unit
--- moduleUnit = moduleUnitId
--- unhelpfulSpanFS :: FS.FastString -> FS.FastString
--- unhelpfulSpanFS = id
-#endif
 
 sourceNodeInfo :: HieAST a -> Maybe (NodeInfo a)
-#if MIN_VERSION_ghc(9,0,0)
 sourceNodeInfo = Map.lookup SourceInfo . getSourcedNodeInfo . sourcedNodeInfo
-#else
-sourceNodeInfo = Just . nodeInfo
-#endif
 
 generatedNodeInfo :: HieAST a -> Maybe (NodeInfo a)
-#if MIN_VERSION_ghc(9,0,0)
 generatedNodeInfo = Map.lookup GeneratedInfo . getSourcedNodeInfo . sourcedNodeInfo
-#else
-generatedNodeInfo = sourceNodeInfo -- before ghc 9.0, we don't distinguish the source
-#endif
 
 data GhcVersion
   = GHC810
@@ -632,11 +559,7 @@ instance IsString FastStringCompat where
 #endif
 
 mkAstNode :: NodeInfo a -> Span -> [HieAST a] -> HieAST a
-#if MIN_VERSION_ghc(9,0,0)
 mkAstNode n = Node (SourcedNodeInfo $ Map.singleton GeneratedInfo n)
-#else
-mkAstNode = Node
-#endif
 
 combineRealSrcSpans :: RealSrcSpan -> RealSrcSpan -> RealSrcSpan
 #if MIN_VERSION_ghc(9,2,0)

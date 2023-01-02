@@ -15,11 +15,7 @@ import Ide.Types
 
 import Data.Data
 import Generics.SYB
-#if __GLASGOW_HASKELL__ >= 900
 import GHC.Driver.Plugins (purePlugin)
-#else
-import Plugins (purePlugin)
-#endif
 
 staticPlugin :: DynFlagsModifications
 staticPlugin = mempty
@@ -43,13 +39,8 @@ pattern MetaprogramSourceText = SourceText "wingman-meta-program"
 
 pattern WingmanMetaprogram :: FastString -> HsExpr p
 pattern WingmanMetaprogram mp <-
-#if __GLASGOW_HASKELL__ >= 900
   HsPragE _ (HsPragSCC _ MetaprogramSourceText (StringLiteral NoSourceText mp))
       (L _ ( HsVar _ _))
-#else
-  HsSCC _ MetaprogramSourceText (StringLiteral NoSourceText mp)
-      (L _ ( HsVar _ _))
-#endif
 
 
 enableQuasiQuotes :: DynFlags -> DynFlags
@@ -77,11 +68,7 @@ metaprogrammingPlugin =
 
 mkMetaprogram :: SrcSpan -> FastString -> HsExpr GhcPs
 mkMetaprogram ss mp =
-#if __GLASGOW_HASKELL__ >= 900
   HsPragE noExtField (HsPragSCC noExtField MetaprogramSourceText (StringLiteral NoSourceText mp))
-#else
-  HsSCC noExtField MetaprogramSourceText (StringLiteral NoSourceText mp)
-#endif
     $ L ss
     $ HsVar noExtField
     $ L ss

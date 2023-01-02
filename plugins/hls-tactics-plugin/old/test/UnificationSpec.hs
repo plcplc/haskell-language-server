@@ -21,11 +21,7 @@ import           Wingman.GHC
 import           Wingman.Machinery (newUnivar)
 import           Wingman.Types
 
-#if __GLASGOW_HASKELL__ >= 900
 import GHC.Tc.Utils.TcType (tcGetTyVar_maybe)
-#else
-import TcType  (tcGetTyVar_maybe)
-#endif
 
 
 spec :: Spec
