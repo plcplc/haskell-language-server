@@ -87,7 +87,7 @@ jobs:
              test: true
            - os: windows-latest
              test: true
-        exclude: ${{ fromJSON(needs.pre_job.outputs.exclusions) }}
+        #exclude: ${{ fromJSON(needs.pre_job.outputs.exclusions) }}
 
     steps:
       - uses: actions/checkout@v3
