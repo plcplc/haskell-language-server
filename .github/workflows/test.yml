@@ -75,7 +75,7 @@ jobs:
       # to update the ghc versions in 'caching.yml'.
       matrix:
         ghc: ${{ fromJSON(needs.pre_job.outputs.ghcs) }}
-        package: ${{ fromJSON(needs.pre_job.outputs.packages) }}
+        package: ["ghcide"]
         os:
           - ubuntu-latest
           - macOS-latest
