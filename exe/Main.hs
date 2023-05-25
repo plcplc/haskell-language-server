@@ -1,14 +1,17 @@
 -- Copyright (c) 2019 The DAML Authors. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 {-# LANGUAGE CPP               #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main(main) where
 
 import           Control.Arrow                ((&&&))
+import           Control.Monad                (void)
 import           Control.Monad.IO.Class       (liftIO)
 import           Data.Function                ((&))
 import           Data.Text                    (Text)
+import qualified Data.Text                    as T
 import qualified Development.IDE.Main         as GhcideMain
 import           Development.IDE.Types.Logger (Doc,
                                                Priority (Debug, Error, Info),
@@ -38,6 +41,18 @@ import           Prettyprinter                (Pretty (pretty), vsep)
 import           Data.Text.Prettyprint.Doc    (Pretty (pretty), vsep)
 #endif
 
+import Data.Time
+import GHC.Debug.Stub
+import qualified GHC.Debug.Client as Client
+import qualified GHC.Debug.Snapshot as Client
+import GHC.Debug.Convention (socketDirectory, snapshotDirectory)
+import Data.Maybe
+import System.Environment
+import System.Posix.Process
+import System.FilePath
+import System.Exit
+import Control.Concurrent
+
 data Log
   = LogIdeMain IdeMain.Log
   | LogPlugins Plugins.Log
@@ -47,8 +62,42 @@ instance Pretty Log where
     LogIdeMain ideMainLog -> pretty ideMainLog
     LogPlugins pluginsLog -> pretty pluginsLog
 
+with_ghc_debug main = do
+  defaultSocketPath <- getDefaultSocketPath
+  socketPath <- fromMaybe defaultSocketPath <$> lookupEnv "GHC_DEBUG_SOCKET"
+  withGhcDebugUnix socketPath (main socketPath)
+  where
+  getDefaultSocketPath = do
+      socketOverride <- fromMaybe "" <$> lookupEnv "GHC_DEBUG_SOCKET"
+      if not (null socketOverride)
+      then return socketOverride
+      else do
+          dir <- socketDirectory
+          name <- getProgName
+          pid <- show <$> getProcessID
+          let socketName = pid ++ "-" ++ name
+          return (dir </> socketName)
+
+takeSnapshot :: FilePath -> LanguageContextEnv config -> IO () -> IO ()
+takeSnapshot socket env snapshot = do
+  snapshotDir <- snapshotDirectory
+  snapshotPath <- formatTime defaultTimeLocale (snapshotDir </> takeFileName socket ++ "-snapshot-%Y-%m-%d-%H%M%S") <$> getZonedTime
+  pid <- forkProcess $ do
+    Client.withDebuggeeConnect socket $ \debugee -> do
+      Client.fork debugee
+      Client.makeSnapshot debugee snapshotPath
+      Client.resume debugee
+  void $ LSP.runLspT env $ LSP.sendNotification SWindowShowMessage $ ShowMessageParams MtInfo $ "Taking snapshot..."
+  void $ forkIO $ do
+    getProcessStatus True False pid >>= \case
+      Just (Exited ExitSuccess) -> do
+        void $ LSP.runLspT env $ LSP.sendNotification SWindowShowMessage $ ShowMessageParams MtInfo $ "Saved snapshot to " <> T.pack snapshotPath
+      status -> do
+        void $ LSP.runLspT env $ LSP.sendNotification SWindowShowMessage $ ShowMessageParams MtError $ "Snapshot process exited with " <> T.pack (show status)
+    snapshot
+
 main :: IO ()
-main = do
+main = with_ghc_debug $ \socket -> do
     -- plugin cli commands use stderr logger for now unless we change the args
     -- parser to get logging arguments first or do more complicated things
     pluginCliRecorder <- cmapWithPrio pretty <$> makeDefaultStderrRecorder Nothing
@@ -62,6 +111,14 @@ main = do
           { pluginNotificationHandlers = mkPluginNotificationHandler LSP.SInitialized $ \_ _ _ _ -> do
               env <- LSP.getLspEnv
               liftIO $ (cb1 <> cb2) env
+
+              let snapshot = void
+                           $ LSP.sendRequest SWindowShowMessageRequest (ShowMessageRequestParams MtInfo "Take Snapshot?" (Just [MessageActionItem "yes"]))
+                           $ \case
+                              Right (Just (MessageActionItem "yes")) -> liftIO (takeSnapshot socket env (LSP.runLspT env snapshot))
+                              _ -> snapshot
+              snapshot
+
           }
 
     let (argsTesting, minPriority, logFilePath) =
